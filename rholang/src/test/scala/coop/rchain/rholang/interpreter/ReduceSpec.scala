@@ -6,6 +6,7 @@ import cats.mtl.FunctorTell
 import com.google.protobuf.ByteString
 import coop.rchain.catscontrib.Capture._
 import coop.rchain.crypto.codec.Base16
+import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.models.Channel.ChannelInstance._
 import coop.rchain.models.Connective.ConnectiveInstance._
 import coop.rchain.models.Expr.ExprInstance._
@@ -45,6 +46,17 @@ trait PersistentStoreTester {
 }
 
 class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
+  def replaceRand(map: Map[_ <: Seq[Channel], Row[BindPattern, Seq[Channel], TaggedContinuation]]) = {
+    map.map { case (key, value) => (key, value.copy(wks = value.wks.map(wk =>
+      wk.copy(continuation = wk.continuation.taggedCont match {
+        case ParBody(ParWithRandom(p, _)) => TaggedContinuation(ParBody(ParWithRandom(p, rand)))
+        case _ => wk.continuation
+      }))))
+    }
+  }
+
+  implicit val rand: Blake2b512Random = Blake2b512Random(new Array[Byte](0))
+
   "evalExpr" should "handle simple addition" in {
     implicit val errorLog = new Runtime.ErrorLog()
     val result = withTestSpace { space =>
@@ -256,7 +268,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
 
     val channels = List(Channel(Quote(GString("channel"))))
 
-    result should be(
+    replaceRand(result) should be(
       HashMap(
         channels ->
           Row(
@@ -270,7 +282,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
                                      Channel(ChanVar(FreeVar(1))),
                                      Channel(ChanVar(FreeVar(2)))),
                                 None)),
-                  TaggedContinuation(ParBody(Par())),
+                  TaggedContinuation(ParBody(ParWithRandom(Par(), rand))),
                   false
                 )
             )
@@ -301,7 +313,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
 
     val channels = List(Channel(Quote(y)))
 
-    result should be(
+    replaceRand(result) should be(
       HashMap(
         channels ->
           Row(
@@ -310,7 +322,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
               WaitingContinuation.create[Channel, BindPattern, TaggedContinuation](
                 channels,
                 List(BindPattern(List(Channel(Quote(Par()))), None)),
-                TaggedContinuation(ParBody(Par())),
+                TaggedContinuation(ParBody(ParWithRandom(Par(), rand))),
                 false))
           )
       ))
@@ -455,7 +467,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
 
     val channels = List(Channel(Quote(GInt(2))))
 
-    sendFirstResult should be(
+    replaceRand(sendFirstResult) should be(
       HashMap(
         channels ->
           Row(
@@ -464,7 +476,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
               WaitingContinuation.create[Channel, BindPattern, TaggedContinuation](
                 channels,
                 List(BindPattern(List(Quote(GInt(2))))),
-                TaggedContinuation(ParBody(Par())),
+                TaggedContinuation(ParBody(ParWithRandom(Par(), rand))),
                 false)
             )
           )
@@ -481,7 +493,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
       } yield space.store.toMap
       Await.result(inspectTaskReceiveFirst.runAsync, 3.seconds)
     }
-    receiveFirstResult should be(
+    replaceRand(receiveFirstResult) should be(
       HashMap(
         channels ->
           Row(
@@ -490,7 +502,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
               WaitingContinuation.create[Channel, BindPattern, TaggedContinuation](
                 channels,
                 List(BindPattern(List(Quote(GInt(2))))),
-                TaggedContinuation(ParBody(Par())),
+                TaggedContinuation(ParBody(ParWithRandom(Par(), rand))),
                 false))
           )
       )
@@ -751,7 +763,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
     val result = withTestSpace { space =>
       val reducer     = RholangOnlyDispatcher.create[Task, Task.Par](space).reducer
       val env         = Env[Par]()
-      val task        = reducer.eval(wrapWithSend(toByteArrayCall))(env)
+      val task        = reducer.eval(wrapWithSend(toByteArrayCall))(env, implicitly)
       val inspectTask = for { _ <- task } yield space.store.toMap
       Await.result(inspectTask.runAsync, 3.seconds)
     }
@@ -805,7 +817,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
     val result = withTestSpace { space =>
       val reducer     = RholangOnlyDispatcher.create[Task, Task.Par](space).reducer
       val env         = Env[Par]()
-      val task        = reducer.eval(wrapWithSend(toByteArrayCall))(env)
+      val task        = reducer.eval(wrapWithSend(toByteArrayCall))(env, implicitly)
       val inspectTask = for { _ <- task } yield space.store.toMap
       Await.result(inspectTask.runAsync, 3.seconds)
     }
@@ -849,7 +861,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
       implicit val errorLog = new Runtime.ErrorLog()
       val reducer           = RholangOnlyDispatcher.create[Task, Task.Par](space).reducer
       val env               = Env[Par]()
-      val task              = reducer.eval(proc)(env)
+      val task              = reducer.eval(proc)(env, implicitly)
       val inspectTask       = for { _ <- task } yield space.store.toMap
       Await.result(inspectTask.runAsync, 3.seconds)
     }
@@ -879,7 +891,7 @@ class ReduceSpec extends FlatSpec with Matchers with PersistentStoreTester {
       implicit val errorLog = new Runtime.ErrorLog()
       val reducer           = RholangOnlyDispatcher.create[Task, Task.Par](space).reducer
       val env               = Env[Par]()
-      val task              = reducer.eval(proc)(env)
+      val task              = reducer.eval(proc)(env, implicitly)
       val inspectTask       = for { _ <- task } yield space.store.toMap
       Await.result(inspectTask.runAsync, 3.seconds)
     }

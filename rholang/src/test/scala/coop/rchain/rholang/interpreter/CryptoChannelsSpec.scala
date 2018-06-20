@@ -5,7 +5,7 @@ import java.nio.file.Files
 import com.google.protobuf.ByteString
 import coop.rchain.catscontrib.Capture
 import coop.rchain.crypto.encryption.Curve25519
-import coop.rchain.crypto.hash.{Blake2b256, Keccak256, Sha256}
+import coop.rchain.crypto.hash.{Blake2b256, Blake2b512Random, Keccak256, Sha256}
 import coop.rchain.crypto.signatures.Ed25519
 import coop.rchain.models.Channel.ChannelInstance.{ChanVar, Quote}
 import coop.rchain.models.Expr.ExprInstance.{GBool, GByteArray, GString}
@@ -35,6 +35,7 @@ class CryptoChannelsSpec
     with TripleEqualsSupport {
   behavior of "Crypto channels"
 
+  implicit val rand: Blake2b512Random = Blake2b512Random(new Array[Byte](0))
   type Store = IStore[Channel, BindPattern, Seq[Channel], TaggedContinuation]
 
   implicit val serializeChannel: Serialize[Channel]       = storage.implicits.serializeChannel

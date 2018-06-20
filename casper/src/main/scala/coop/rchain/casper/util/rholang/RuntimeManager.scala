@@ -1,8 +1,10 @@
 package coop.rchain.casper.util.rholang
 
+import java.security.SecureRandom
 import com.google.protobuf.ByteString
 
 import coop.rchain.catscontrib.TaskContrib._
+import coop.rchain.crypto.hash.Blake2b512Random
 import coop.rchain.models.Par
 import coop.rchain.rholang.interpreter.Runtime
 import coop.rchain.rholang.interpreter.storage.StoragePrinter
@@ -46,7 +48,10 @@ class RuntimeManager private (runtime: SyncVar[Runtime]) {
   }
 
   private def eval(terms: List[Par], active: Runtime)(
-      implicit scheduler: Scheduler): Option[Throwable] =
+      implicit scheduler: Scheduler): Option[Throwable] = {
+    val bytes = new Array[Byte](128)
+    new SecureRandom().nextBytes(bytes)
+    implicit val rand = Blake2b512Random(bytes)
     terms match {
       case term :: rest =>
         Try(active.reducer.inj(term).unsafeRunSync) match {
@@ -56,6 +61,7 @@ class RuntimeManager private (runtime: SyncVar[Runtime]) {
 
       case Nil => None
     }
+  }
 }
 
 object RuntimeManager {

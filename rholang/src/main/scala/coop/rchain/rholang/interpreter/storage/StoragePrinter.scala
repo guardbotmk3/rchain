@@ -40,8 +40,9 @@ object StoragePrinter {
                   ReceiveBind(pattern.patterns, channel, pattern.remainder, pattern.freeCount)
               }
               continuation.taggedCont match {
-                case ParBody(p) => Receive(receiveBinds, p, persist, patterns.map(_.freeCount).sum)
-                case _          => Receive(receiveBinds, Par.defaultInstance, persist)
+                case ParBody(p) =>
+                  Receive(receiveBinds, p.body, persist, patterns.map(_.freeCount).sum)
+                case _ => Receive(receiveBinds, Par.defaultInstance, persist)
               }
           }
           receives.foldLeft(Par()) { (acc: Par, receive: Receive) =>
