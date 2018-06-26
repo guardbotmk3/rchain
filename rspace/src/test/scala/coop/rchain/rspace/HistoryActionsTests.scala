@@ -39,7 +39,7 @@ trait HistoryActionsTests
       contents: Map[Seq[String], Row[Pattern, String, StringsCaptor]]
   )
 
-  def validateIndexedStates(space: ISpace[String, Pattern, String, StringsCaptor],
+  def validateIndexedStates(space: ISpace[String, Pattern, String, String, StringsCaptor],
                             indexedStates: Seq[(State, Int)]): Boolean = {
     val tests: Seq[Any] = indexedStates
       .map {
