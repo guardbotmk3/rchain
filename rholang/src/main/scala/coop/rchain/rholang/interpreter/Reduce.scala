@@ -36,7 +36,8 @@ import monix.eval.Coeval
   */
 trait Reduce[M[_]] {
 
-  def produce(chan: Quote, data: Seq[Par], persistent: Boolean)(implicit env: Env[Par]): M[Unit]
+  def produce(chan: Quote, data: Seq[Par], persistent: Boolean)(implicit env: Env[Par],
+                                                                rand: Blake2b512Random): M[Unit]
 
   def consume(binds: Seq[(BindPattern, Quote)], body: Par, persistent: Boolean)(
       implicit env: Env[Par],
@@ -57,8 +58,13 @@ trait Reduce[M[_]] {
 object Reduce {
 
   class DebruijnInterpreter[M[_]: InterpreterErrorsM: Capture, F[_]](
-      tupleSpace: PureRSpace[M, Channel, BindPattern, Seq[Channel], TaggedContinuation],
-      dispatcher: => Dispatch[M, Seq[Channel], TaggedContinuation])(
+      tupleSpace: PureRSpace[M,
+                             Channel,
+                             BindPattern,
+                             ListChannelWithRandom,
+                             ListChannelWithRandom,
+                             TaggedContinuation],
+      dispatcher: => Dispatch[M, ListChannelWithRandom, TaggedContinuation])(
       implicit parallel: cats.Parallel[M, F],
       fTell: FunctorTell[M, InterpreterError])
       extends Reduce[M] {
@@ -75,9 +81,10 @@ object Reduce {
       * @return  An optional continuation resulting from a match in the tuplespace.
       */
     override def produce(chan: Quote, data: Seq[Par], persistent: Boolean)(
-        implicit env: Env[Par]): M[Unit] = {
+        implicit env: Env[Par],
+        rand: Blake2b512Random): M[Unit] = {
       // TODO: Handle the environment in the store
-      def go(res: Option[(TaggedContinuation, Seq[Seq[Channel]])]) =
+      def go(res: Option[(TaggedContinuation, Seq[ListChannelWithRandom])]) =
         res match {
           case Some((continuation, dataList)) =>
             if (persistent) {
@@ -93,8 +100,10 @@ object Reduce {
       for {
         substData <- data.toList.traverse(
                       substitutePar[M].substitute(_)(0, env).map(p => Channel(Quote(p))))
-        res <- tupleSpace.produce(Channel(chan), substData, persist = persistent)
-        _   <- go(res)
+        res <- tupleSpace.produce(Channel(chan),
+                                  ListChannelWithRandom(substData, rand),
+                                  persist = persistent)
+        _ <- go(res)
       } yield ()
     }
 
@@ -155,16 +164,19 @@ object Reduce {
           case _              => false
         }
       }
-      val starts = Vector(par.receives.size,
+      val starts = Vector(par.sends.size,
+                          par.receives.size,
                           par.news.size,
                           par.matches.size,
                           par.bundles.size,
                           filteredExprs.size)
         .scanLeft(0)(_ + _)
-      def handleRand[A](eval: (A => (Env[Par], Blake2b512Random) => M[Unit]), start: Int)(
+      def handle[A](eval: (A => (Env[Par], Blake2b512Random) => M[Unit]), start: Int)(
           ta: (A, Int)): M[Unit] = {
         val newRand =
-          if (starts(5) > 256)
+          if (starts(6) == 1)
+            rand
+          else if (starts(6) > 256)
             rand.splitShort((start + ta._2).toShort)
           else
             rand.splitByte((start + ta._2).toByte)
@@ -172,23 +184,21 @@ object Reduce {
           fTell.tell(e)
         })
       }
-      def handle[A](eval: (A => M[Unit]))(a: A): M[Unit] =
-        eval(a).handleError((e: InterpreterError) => {
-          fTell.tell(e)
-        })
       List(
-        Parallel.parTraverse(par.sends.toList)(handle(eval)),
-        Parallel.parTraverse(par.receives.zipWithIndex.toList)(handleRand(evalExplicit, starts(0))),
-        Parallel.parTraverse(par.news.zipWithIndex.toList)(handleRand(evalExplicit, starts(1))),
-        Parallel.parTraverse(par.matches.zipWithIndex.toList)(handleRand(evalExplicit, starts(2))),
-        Parallel.parTraverse(par.bundles.zipWithIndex.toList)(handleRand(evalExplicit, starts(3))),
+        Parallel.parTraverse(par.sends.zipWithIndex.toList)(handle(evalExplicit, starts(0))),
+        Parallel.parTraverse(par.receives.zipWithIndex.toList)(handle(evalExplicit, starts(1))),
+        Parallel.parTraverse(par.news.zipWithIndex.toList)(handle(evalExplicit, starts(2))),
+        Parallel.parTraverse(par.matches.zipWithIndex.toList)(handle(evalExplicit, starts(3))),
+        Parallel.parTraverse(par.bundles.zipWithIndex.toList)(handle(evalExplicit, starts(4))),
         Parallel.parTraverse(filteredExprs.zipWithIndex.toList)(texpr => {
           val (expr, idx) = texpr
           val newRand =
-            if (starts(5) > 256)
-              rand.splitShort((starts(4) + idx).toShort)
+            if (starts(6) == 1)
+              rand
+            else if (starts(6) > 256)
+              rand.splitShort((starts(5) + idx).toShort)
             else
-              rand.splitByte((starts(4) + idx).toByte)
+              rand.splitByte((starts(5) + idx).toByte)
           expr.exprInstance match {
             case EVarBody(EVar(v)) =>
               (for {
@@ -214,6 +224,9 @@ object Reduce {
     override def inj(par: Par)(implicit rand: Blake2b512Random): M[Unit] =
       for { _ <- eval(par)(Env[Par](), rand) } yield ()
 
+    def evalExplicit(send: Send)(env: Env[Par], rand: Blake2b512Random): M[Unit] =
+      eval(send)(env, rand)
+
     /** Algorithm as follows:
       *
       * 1. Fully evaluate the channel in given environment.
@@ -227,7 +240,7 @@ object Reduce {
       * @param env An execution context
       * @return
       */
-    def eval(send: Send)(implicit env: Env[Par]): M[Unit] =
+    def eval(send: Send)(implicit env: Env[Par], rand: Blake2b512Random): M[Unit] =
       for {
         quote <- eval(send.chan)
         data  <- send.data.toList.traverse(x => evalExpr(x))

@@ -37,6 +37,7 @@ class RholangBuildTest extends FlatSpec with Matchers {
     val storage = HashSetCasperTest.blockTuplespaceContents(signedBlock)
 
     logEff.warns should be(Nil)
+    println(s"storage: ${storage}")
     storage.contains("@{\"primes\"}!([2, [3, [5, [7, []]]]])") should be(true)
     storage.contains("@{\"dprimes\"}!([4, [6, [10, [14, []]]]])") should be(true)
   }

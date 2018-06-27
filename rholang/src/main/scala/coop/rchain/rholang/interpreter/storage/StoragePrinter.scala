@@ -11,14 +11,16 @@ import coop.rchain.rspace.internal.{Datum, Row, WaitingContinuation}
 import coop.rchain.rspace.trace.{Consume, Produce}
 
 object StoragePrinter {
-  def prettyPrint(store: IStore[Channel, BindPattern, Seq[Channel], TaggedContinuation]): String = {
+  def prettyPrint(
+      store: IStore[Channel, BindPattern, ListChannelWithRandom, TaggedContinuation]): String = {
     val pars: Seq[Par] = store.toMap.map {
-      case ((channels: Seq[Channel], row: Row[BindPattern, Seq[Channel], TaggedContinuation])) => {
-        def toSends(data: Seq[Datum[Seq[Channel]]]): Par = {
+      case ((channels: Seq[Channel],
+             row: Row[BindPattern, ListChannelWithRandom, TaggedContinuation])) => {
+        def toSends(data: Seq[Datum[ListChannelWithRandom]]): Par = {
           val sends: Seq[Send] = data.flatMap {
-            case Datum(as: Seq[Channel], persist: Boolean, _: Produce) =>
+            case Datum(as: ListChannelWithRandom, persist: Boolean, _: Produce) =>
               channels.map { channel =>
-                Send(channel, as.map {
+                Send(channel, as.channels.map {
                   case Channel(Quote(p)) => p
                   case Channel(_)        => Par() // Should never happen
                 }, persist)
@@ -53,11 +55,11 @@ object StoragePrinter {
         row match {
           case Row(Nil, Nil) =>
             Par()
-          case Row(data: Seq[Datum[Seq[Channel]]], Nil) =>
+          case Row(data: Seq[Datum[ListChannelWithRandom]], Nil) =>
             toSends(data)
           case Row(Nil, wks: Seq[WaitingContinuation[BindPattern, TaggedContinuation]]) =>
             toReceive(wks)
-          case Row(data: Seq[Datum[Seq[Channel]]],
+          case Row(data: Seq[Datum[ListChannelWithRandom]],
                    wks: Seq[WaitingContinuation[BindPattern, TaggedContinuation]]) =>
             toSends(data) ++ toReceive(wks)
         }

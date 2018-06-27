@@ -31,8 +31,8 @@ message TaggedContinuation {
 }
 
 message ParWithRandom {
-  Par body = 1 [(scalapb.field).no_box = true];
-  bytes randomState = 2 [(scalapb.field).type = "coop.rchain.crypto.hash.Blake2b512Random"];
+    Par body = 1 [(scalapb.field).no_box = true];
+    bytes randomState = 2 [(scalapb.field).type = "coop.rchain.crypto.hash.Blake2b512Random"];
 }
 
 message Channel {
@@ -42,8 +42,9 @@ message Channel {
     }
 }
 
-message ListChannel {
+message ListChannelWithRandom {
     repeated Channel channels = 1;
+    bytes randomState = 2 [(scalapb.field).type = "coop.rchain.crypto.hash.Blake2b512Random"];
 }
 
 // While we use vars in both positions, when producing the normalized
